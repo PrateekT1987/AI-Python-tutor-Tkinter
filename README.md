@@ -27,11 +27,15 @@ Models are tried in order and fall back automatically:
 
 | Priority | Model | Provider |
 | --- | --- | --- |
-| 1 | `gemini-3.7-flash` | Google AI Studio |
-| 2 | `Qwen/Qwen2.5-7B-Instruct` | SiliconFlow |
-| 3 | `Qwen/Qwen3-8B` | SiliconFlow |
-| 4 | `big-pickle` | OpenCode Zen |
-| 5 | `mimo-v2.5-free` | OpenCode Zen |
+| 1 | `qwen2.5:1.5b` | Ollama (local, no API key) |
+| 2 | `gemini-3.7-flash` | Google AI Studio |
+| 3 | `Qwen/Qwen2.5-7B-Instruct` | SiliconFlow |
+| 4 | `Qwen/Qwen3-8B` | SiliconFlow |
+| 5 | `big-pickle` | OpenCode Zen |
+| 6 | `mimo-v2.5-free` | OpenCode Zen |
+
+Ollama must be running (`ollama serve` / the app) with `ollama pull qwen2.5:1.5b`.
+It is tried first; if the local server is unreachable the app falls back to the cloud models.
 
 ## Getting started — desktop app
 

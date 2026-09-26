@@ -8,7 +8,8 @@ Requirements:
 Runs with:  python3 python_tutor_gui.py
 
 Reads API keys from .env (same file Vite used). Model fallback:
-gemini-3.7-flash -> Qwen2.5-7B -> Qwen3-8B -> big-pickle -> mimo-v2.5-free.
+qwen2.5:1.5b (local Ollama) -> gemini-3.7-flash -> Qwen2.5-7B -> Qwen3-8B
+-> big-pickle -> mimo-v2.5-free.
 
 Every code block the tutor writes gets a "run this code" button: it runs the
 snippet with the same interpreter (sys.executable) in an isolated temp dir,
@@ -57,12 +58,14 @@ LEVELS = ["Beginner", "Intermediate", "Advanced"]
 
 # ── Providers + models ─────────────────────────────────────────────────
 PROVIDER_URLS = {
+    "ollama": os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/") + "/v1",
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "siliconflow": "https://api.siliconflow.com/v1",
     "zen": "https://opencode.ai/zen/v1",
 }
 
 MODELS = [
+    ("qwen2.5:1.5b", "ollama"),
     ("gemini-3.7-flash", "gemini"),
     ("Qwen/Qwen2.5-7B-Instruct", "siliconflow"),
     ("Qwen/Qwen3-8B", "siliconflow"),
@@ -108,6 +111,8 @@ ENV = load_env(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 
 def provider_headers(provider):
+    if provider == "ollama":
+        return {}  # local Ollama needs no auth
     if provider == "gemini":
         return {"Authorization": f"Bearer {ENV.get('VITE_GEMINI_API_KEY', '')}"}
     if provider == "siliconflow":

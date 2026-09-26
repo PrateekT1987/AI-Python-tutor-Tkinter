@@ -20,6 +20,13 @@ openai-env/
 # Local sandbox scratch data
 scratchpad.py
 
+# Jupyter scratch notebooks
+.ipynb_checkpoints/
+Untitled*.ipynb
+
+# Personal notes/scratch
+email.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
