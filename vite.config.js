@@ -1,54 +1,48 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// Development config for the browser console.
+//
+// The browser never sees the OpenRouter key: Vite proxies /api/openrouter to
+// OpenRouter and injects the Authorization + attribution headers server-side.
+// For production, build with `npm run build` and serve through `server.py`,
+// which exposes the same /api/openrouter and /api/config endpoints.
+
+function configEndpoint(model) {
+  return {
+    name: 'python-tutor-config',
+    configureServer(server) {
+      server.middlewares.use('/api/config', (_req, res) => {
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ model }))
+      })
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const zenApiKey = env.VITE_OPENCODE_API_KEY || 'public'
-  const siliconflowApiKey = env.VITE_SILICONFLOW_API_KEY || ''
-  const geminiApiKey = env.VITE_GEMINI_API_KEY || ''
+  const baseUrl = new URL(env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1')
+  const apiPrefix = baseUrl.pathname.replace(/\/$/, '') // e.g. /api/v1
+  const apiKey = env.OPENROUTER_API_KEY || ''
+  const model = env.MODEL || ''
+  const referer = env.OPENROUTER_HTTP_REFERER || 'http://localhost:5173'
+  const title = env.OPENROUTER_APP_TITLE || 'Python Tutor'
 
   return {
-    plugins: [react()],
+    plugins: [react(), configEndpoint(model)],
     server: {
       proxy: {
-        '/api/zen': {
-          target: 'https://opencode.ai',
+        '/api/openrouter': {
+          target: baseUrl.origin,
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/zen/, '/zen/v1'),
+          rewrite: (path) => path.replace(/^\/api\/openrouter/, apiPrefix),
           configure: (proxy) => {
             proxy.on('proxyReq', (proxyReq) => {
-              // Use the real key from .env (opencode.ai/auth). The free tier
-              // rejects the placeholder 'public', so this must be a valid key.
-              proxyReq.setHeader('Authorization', `Bearer ${zenApiKey}`);
-
-              // These headers identify the request as coming from an OpenCode
-              // client; the free-tier models require them.
-              proxyReq.setHeader('x-opencode-client', 'cli');
-              proxyReq.setHeader('x-opencode-session', `ses_${Date.now()}`);
-              proxyReq.setHeader('User-Agent', 'opencode/1.15.5');
-            });
-          },
-        },
-        '/api/siliconflow': {
-          target: 'https://api.siliconflow.com',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/siliconflow/, '/v1'),
-          configure: (proxy) => {
-            proxy.on('proxyReq', (proxyReq) => {
-              proxyReq.setHeader('Authorization', `Bearer ${siliconflowApiKey}`);
-            });
-          },
-        },
-        '/api/gemini': {
-          target: 'https://generativelanguage.googleapis.com',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/gemini/, '/v1beta/openai'),
-          configure: (proxy) => {
-            proxy.on('proxyReq', (proxyReq) => {
-              // A Google AI Studio key (aistudio.google.com) is a plain
-              // OpenAI-compatible bearer token on this endpoint.
-              proxyReq.setHeader('Authorization', `Bearer ${geminiApiKey}`);
-            });
+              proxyReq.setHeader('Authorization', `Bearer ${apiKey}`)
+              proxyReq.setHeader('HTTP-Referer', referer)
+              proxyReq.setHeader('X-Title', title)
+            })
           },
         },
       },

@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python-tutor"
+version = "1.0.0"
+description = "An interactive, REPL-style Python tutor with a desktop app and a browser console, backed by OpenRouter."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31,<3"]
+classifiers = [
+    "Environment :: X11 Applications",
+    "Intended Audience :: Education",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Education",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.gui-scripts]
+python-tutor = "ui.app:main"
+
+[project.scripts]
+python-tutor-server = "server:main"
+
+[tool.setuptools]
+py-modules = [
+    "config",
+    "content",
+    "helper_functions",
+    "llm",
+    "prompts",
+    "sandbox",
+    "server",
+    "settings",
+]
+packages = ["ui"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

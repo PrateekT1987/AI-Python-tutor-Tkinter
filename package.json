@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "start": "python3 server.py",
     "lint": "oxlint",
     "preview": "vite preview"
   },

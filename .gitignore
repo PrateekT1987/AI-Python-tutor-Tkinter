@@ -16,9 +16,18 @@ dist-ssr
 __pycache__/
 *.py[cod]
 openai-env/
+.venv/
+venv/
+
+# Build / packaging artifacts
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Local sandbox scratch data
-scratchpad.py
+/scratchpad.py
 
 # Jupyter scratch notebooks
 .ipynb_checkpoints/
@@ -26,6 +35,7 @@ Untitled*.ipynb
 
 # Personal notes/scratch
 email.txt
+testapi.py
 
 # Editor directories and files
 .vscode/*

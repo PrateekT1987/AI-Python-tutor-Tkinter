@@ -1,48 +1,72 @@
-"""Local helper functions for the LLM course, wired to OpenCode Zen (big-pickle).
+"""Course helpers wired to OpenRouter.
 
-Drop-in replacement for the notebook's helper_functions.py. Uses the same
-OpenAI-compatible client and key resolution as chatbot.py, so it works with
-the venv's exported OPENCODE_API_KEY or the VITE_OPENCODE_API_KEY in .env.
+These are the notebook helpers used by the LLM course, kept as a light
+compatibility layer over the same provider and model as the desktop tutor.
+Configuration comes from `.env` via `config.py` (OPENROUTER_API_KEY,
+OPENROUTER_BASE_URL, MODEL).
 
 Not a pip package: keep this file next to your scripts and
 `from helper_functions import get_completion` will just work.
 """
-import os
-import time
 
-import pandas as pd
-from openai import OpenAI
-from openai import RateLimitError
+from __future__ import annotations
 
-try:
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv())  # read local .env file, if present
-except ImportError:
-    pass  # key may already be in the shell environment
+import requests
 
-API_KEY = os.getenv("OPENCODE_API_KEY") or os.getenv("VITE_OPENCODE_API_KEY")
-if not API_KEY:
-    raise SystemExit("OPENCODE_API_KEY not found: activate openai-env or set it in .env")
-
-DEFAULT_MODEL = "big-pickle"
-
-client = OpenAI(
-    api_key=API_KEY,
-    base_url="https://opencode.ai/zen/v1",
-    default_headers={
-        "x-opencode-client": "cli",
-        "x-opencode-session": f"ses_{int(time.time() * 1000)}",
-        "User-Agent": "opencode/1.15.5",
-    },
+from config import (
+    CHAT_COMPLETIONS_URL,
+    MAX_TOKENS,
+    MODEL,
+    OPENROUTER_API_KEY,
+    provider_headers,
+    validate_config,
 )
 
+DEFAULT_MODEL = MODEL
+DEFAULT_MAX_TOKENS = MAX_TOKENS
 
-def _create(messages, model=DEFAULT_MODEL, temperature=0):
-    return client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-    )
+
+class TutorError(RuntimeError):
+    """Raised when the tutor backend cannot produce a completion."""
+
+
+def _create(
+    messages: list[dict[str, str]],
+    model: str = DEFAULT_MODEL,
+    temperature: float = 0,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
+) -> str:
+    validate_config()
+    payload = {
+        "model": model or MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    try:
+        response = requests.post(
+            CHAT_COMPLETIONS_URL,
+            json=payload,
+            headers=provider_headers(),
+            timeout=60,
+        )
+    except requests.RequestException as exc:
+        raise TutorError(f"Could not reach OpenRouter: {exc}") from exc
+
+    if response.status_code == 429:
+        raise TutorError("OpenRouter rate limit reached (429). Wait a moment and retry.")
+    if response.status_code in (401, 403):
+        raise TutorError(
+            "OpenRouter rejected the credentials (401/403). Check OPENROUTER_API_KEY."
+        )
+    if not response.ok:
+        detail = response.text.strip().replace("\n", " ")[:200]
+        raise TutorError(f"OpenRouter returned {response.status_code}: {detail}")
+
+    try:
+        return response.json()["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise TutorError("Unexpected response shape from OpenRouter.") from exc
 
 
 def get_completion(prompt, model=DEFAULT_MODEL, temperature=0):
@@ -53,14 +77,7 @@ def get_completion(prompt, model=DEFAULT_MODEL, temperature=0):
 
 def get_completion_from_messages(messages, model=DEFAULT_MODEL, temperature=0):
     """Chat-style helper; takes a list of message dicts, returns the reply str."""
-    try:
-        response = _create(messages, model=model, temperature=temperature)
-    except RateLimitError:
-        raise SystemExit(
-            "OpenCode free tier is rate-limited (429). Wait a few minutes and retry, "
-            "or use the tutor's Gemini/other providers instead."
-        )
-    return response.choices[0].message.content
+    return _create(messages, model=model, temperature=temperature)
 
 
 def get_llm_response(prompt, temperature=0):
@@ -79,19 +96,20 @@ def get_response_from_llm(messages, temperature=0):
 
 
 def display_table(data):
-    """Render a list of dicts (or rows) as a table.
-
-    In Jupyter this shows the rich pandas-styled table; as a plain script it
-    prints an aligned plain-text table. Same contract as the course helper.
-    """
+    """Render a list of dicts as a table (pandas/IPython when available)."""
     try:
-        import IPython.display  # available in notebooks
+        import pandas as pd
     except ImportError:
-        IPython = None
+        for row in data:
+            print(row)
+        return
+
     df = pd.DataFrame(data)
-    if IPython is not None:
-        IPython.display.display(df)
-    else:
+    try:
+        from IPython.display import display
+
+        display(df)
+    except ImportError:
         print(df.to_string(index=False))
 
 

@@ -14,25 +14,12 @@ const COLORS = {
 
 const LEVELS = ["Beginner", "Intermediate", "Advanced"];
 
-// ── Model providers ──────────────────────────────────────────────────
-// API keys live in .env and are injected by the Vite proxy (vite.config.js),
-// so they never ship to the browser.
-const PROVIDER_URLS = {
-  gemini: "/api/gemini",
-  siliconflow: "/api/siliconflow",
-  zen: "/api/zen",
-};
-
-// Order = preference. Each entry maps to a provider; we fall back down the
-// list if a model errors or rate-limits. Gemini 3.7 Flash (Google AI Studio)
-// is the primary; SiliconFlow Qwen and OpenCode Zen free tier back it up.
-const MODELS = [
-  { id: "gemini-3.7-flash", provider: "gemini" },
-  { id: "Qwen/Qwen2.5-7B-Instruct", provider: "siliconflow" },
-  { id: "Qwen/Qwen3-8B", provider: "siliconflow" },
-  { id: "big-pickle", provider: "zen" },
-  { id: "mimo-v2.5-free", provider: "zen" },
-];
+// ── OpenRouter (single provider) ─────────────────────────────────────
+// The key lives server-side: Vite proxies /api/openrouter during development
+// and server.py proxies it in production. The browser only receives the model
+// id from /api/config.
+const CHAT_URL = "/api/openrouter/chat/completions";
+const FALLBACK_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free";
 
 const STARTERS = {
   Beginner: [
@@ -161,7 +148,7 @@ export default function PythonTutorConsole() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const scrollRef = useRef(null);
-  const modelIndexRef = useRef(0);
+  const [model, setModel] = useState(FALLBACK_MODEL);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -169,28 +156,34 @@ export default function PythonTutorConsole() {
     }
   }, [messages, loading]);
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  useEffect(() => {
+    fetch("/api/config")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((config) => {
+        if (config?.model) setModel(config.model);
+      })
+      .catch(() => {
+        // Keep the baked fallback; the request itself will surface any error.
+      });
+  }, []);
 
-  async function streamChat({ id, provider }, messages, onToken) {
+  async function streamChat(modelId, messages, onToken) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
-      const response = await fetch(
-        `${PROVIDER_URLS[provider]}/chat/completions`,
-        {
-          method: "POST",
-          signal: controller.signal,
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: id,
-            max_tokens: 700,
-            stream: true,
-            messages,
-          }),
+      const response = await fetch(CHAT_URL, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          model: modelId,
+          max_tokens: 2000,
+          stream: true,
+          messages,
+        }),
+      });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         throw new Error(`${response.status} ${body.slice(0, 160)}`);
@@ -240,46 +233,28 @@ export default function PythonTutorConsole() {
       ...nextMessages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
-    const orderedModels = [
-      MODELS[modelIndexRef.current],
-      ...MODELS.filter((_, i) => i !== modelIndexRef.current),
-    ];
-
-    let lastError = "";
-    for (const model of orderedModels) {
-      let assistantText = "";
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "" },
-      ]);
-      try {
-        await streamChat(model, chatMessages, (token) => {
-          if (!assistantText) setLoading(false);
-          assistantText += token;
-          setMessages((prev) => {
-            const next = [...prev];
-            next[next.length - 1] = { role: "assistant", content: assistantText };
-            return next;
-          });
+    let assistantText = "";
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+    try {
+      await streamChat(model, chatMessages, (token) => {
+        assistantText += token;
+        setMessages((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { role: "assistant", content: assistantText };
+          return next;
         });
-        if (!assistantText.trim()) throw new Error("empty response");
-        modelIndexRef.current = MODELS.indexOf(model);
-        setLoading(false);
-        return;
-      } catch (err) {
-        setMessages((prev) => prev.slice(0, -1));
-        lastError =
-          err.name === "AbortError"
-            ? "timed out"
-            : `${err.message}`.split("\n")[0].slice(0, 80);
-        await sleep(500);
-      }
+      });
+      if (!assistantText.trim()) throw new Error("empty response");
+      setLoading(false);
+    } catch (err) {
+      setMessages((prev) => prev.slice(0, -1));
+      const detail =
+        err.name === "AbortError"
+          ? "timed out"
+          : `${err.message}`.split("\n")[0].slice(0, 120);
+      setErrorMsg(`Tutor request failed (${detail}). Check the server logs and try again.`);
+      setLoading(false);
     }
-
-    setErrorMsg(
-      `The tutor models are busy right now (${lastError}). Give it a couple of seconds and try again.`,
-    );
-    setLoading(false);
   }
 
   function handleKeyDown(e) {
