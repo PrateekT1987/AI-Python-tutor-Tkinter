@@ -9,7 +9,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext
 
 from config import MODEL, validate_config
-from content import looks_truncated, parse_content
+from content import looks_truncated, parse_content, parse_inline, parse_table, format_table, InlineSpan
 from llm import (
     Cancelled,
     describe_error,
@@ -198,8 +198,14 @@ class TutorApp:
         text.tag_configure("code", foreground=CODE_FG, background=CODE_BG,
                            font=self.mono, lmargin1=12, lmargin2=12, rmargin=12,
                            spacing1=4, spacing3=4)
+        text.tag_configure("table", font=self.mono, lmargin1=12, lmargin2=12, rmargin=12,
+                           spacing1=2, spacing3=2, background=CODE_BG, foreground=CODE_FG)
         text.tag_configure("error", foreground=ERROR)
         text.tag_configure("thinking", foreground=MUTED, font=self.small, lmargin1=26)
+        # Inline markdown tags
+        text.tag_configure("bold", font=(self.body[0], self.body[1], "bold"))
+        text.tag_configure("italic", font=(self.body[0], self.body[1], "italic"))
+        text.tag_configure("inline_code", font=self.mono, foreground=AMBER, background=CODE_BG)
         for name, color in SYNTAX.items():
             text.tag_configure(name, foreground=color)
 
@@ -290,7 +296,7 @@ class TutorApp:
             self._insert_runner(code)
 
     def _insert_parsed(self, content, role):
-        """Insert a message respecting fenced code blocks."""
+        """Insert a message respecting fenced code blocks, tables, and inline markdown."""
         is_user = role == "user"
         self._insert(">>> " if is_user else "... ",
                      ("user_prompt" if is_user else "ai_prompt",))
@@ -299,9 +305,26 @@ class TutorApp:
                 continue
             if block.kind == "code":
                 self._insert_code(block.value.strip("\n"), allow_run=not is_user)
+            elif block.kind == "table":
+                rows, col_widths = parse_table(block.value)
+                if rows:
+                    formatted = format_table(rows, col_widths)
+                    self._insert(formatted + "\n\n", ("table",))
             else:
-                self._insert(block.value.strip() + "\n",
-                             ("user_text" if is_user else "ai_text",))
+                # Text block - parse inline markdown
+                text = block.value.strip()
+                if text:
+                    spans = parse_inline(text)
+                    for span in spans:
+                        if span.type == "text":
+                            self._insert(span.text, ("ai_text",))
+                        elif span.type == "bold":
+                            self._insert(span.text, ("bold",))
+                        elif span.type == "italic":
+                            self._insert(span.text, ("italic",))
+                        elif span.type == "code":
+                            self._insert(span.text, ("inline_code",))
+                self._insert("\n", ("ai_text",))
         self._insert("\n")
 
     def _insert_runner(self, code):

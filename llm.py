@@ -98,6 +98,8 @@ def _sleep_or_cancel(delay: float, cancel) -> None:
 
 
 def _iter_sse(resp, flag, cancel) -> Iterator[str]:
+    # Ensure UTF-8 encoding for the response
+    resp.encoding = "utf-8"
     for raw in resp.iter_lines(decode_unicode=True):
         if cancel is not None and cancel.is_set():
             raise Cancelled("stopped")
